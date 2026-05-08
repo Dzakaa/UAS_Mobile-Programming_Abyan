@@ -1,0 +1,127 @@
+// 1. Buat Container Utama
+const body = document.body;
+body.style.margin = "0";
+body.style.backgroundColor = "#a7bcc6";
+body.style.fontFamily = "sans-serif";
+body.style.display = "flex";
+body.style.justifyContent = "center";
+body.style.alignItems = "center";
+body.style.minHeight = "100vh";
+
+const container = document.createElement('div');
+container.style.width = "900px";
+container.style.position = "relative";
+container.style.padding = "40px";
+container.style.overflow = "hidden";
+body.appendChild(container);
+
+// 2. Header: "Tes Cuaca"
+const headerBox = document.createElement('div');
+headerBox.style.backgroundColor = "#f9e79f";
+headerBox.style.border = "2px solid black";
+headerBox.style.display = "inline-block";
+headerBox.style.padding = "10px 30px";
+
+const title = document.createElement('h1');
+title.innerText = "Tes Cuaca";
+title.style.color = "#e74c3c";
+title.style.fontSize = "80px";
+title.style.margin = "0";
+headerBox.appendChild(title);
+container.appendChild(headerBox);
+
+// 3. Sub-header & Garis Hijau
+const subHeader = document.createElement('p');
+subHeader.innerHTML = "Apakah kamu mau tau<br>cuaca hari ini?";
+subHeader.style.fontSize = "45px";
+subHeader.style.color = "#1b5e20";
+subHeader.style.fontWeight = "bold";
+subHeader.style.fontStyle = "italic";
+container.appendChild(subHeader);
+
+const greenBar = document.createElement('div');
+greenBar.style.width = "280px";
+greenBar.style.height = "12px";
+greenBar.style.backgroundColor = "#58d68d";
+greenBar.style.marginBottom = "30px";
+container.appendChild(greenBar);
+
+// 4. Tombol Login Biru (Pita)
+const loginBtnBlue = document.createElement('button');
+loginBtnBlue.innerText = "Login dulu yukk!!";
+loginBtnBlue.style.backgroundColor = "#0080ff";
+loginBtnBlue.style.color = "white";
+loginBtnBlue.style.padding = "10px 40px";
+loginBtnBlue.style.border = "none";
+loginBtnBlue.style.fontWeight = "bold";
+loginBtnBlue.style.clipPath = "polygon(10% 0%, 90% 0%, 100% 50%, 90% 100%, 10% 100%, 0% 50%)";
+container.appendChild(loginBtnBlue);
+
+// 5. Form Input (Email & Password)
+const createInputGroup = (labelText, placeholderText, type = "text") => {
+    const group = document.createElement('div');
+    group.style.margin = "25px 0";
+    
+    const label = document.createElement('label');
+    label.innerText = labelText;
+    label.style.display = "block";
+    label.style.fontWeight = "bold";
+    label.style.marginBottom = "10px";
+    
+    const input = document.createElement('input');
+    input.type = type;
+    input.placeholder = placeholderText;
+    input.style.width = "95%";
+    input.style.padding = "15px";
+    input.style.backgroundColor = "#d1d1d1";
+    input.style.border = "none";
+    
+    group.appendChild(label);
+    group.appendChild(input);
+    return group;
+};
+
+container.appendChild(createInputGroup("Masukkan Email", "email"));
+container.appendChild(createInputGroup("Masukkan Password", "password", "password"));
+
+// 6. Footer (Register & Login Akhir)
+const footer = document.createElement('div');
+footer.style.display = "flex";
+footer.style.alignItems = "center";
+footer.style.marginTop = "30px";
+
+const regText = document.createElement('div');
+regText.innerHTML = "Yahh anda belum punya akun yahhh,<br>buat dulu yuu ";
+regText.style.fontWeight = "bold";
+
+const regBtn = document.createElement('button');
+regBtn.innerText = "Register";
+regBtn.style.backgroundColor = "#d1d1d1";
+regBtn.style.border = "none";
+regBtn.style.padding = "5px 15px";
+regBtn.style.cursor = "pointer";
+
+const loginBtnBottom = document.createElement('button');
+loginBtnBottom.innerText = "Login ahh";
+loginBtnBottom.style.backgroundColor = "#d1d1d1";
+loginBtnBottom.style.border = "none";
+loginBtnBottom.style.padding = "10px 30px";
+loginBtnBottom.style.marginLeft = "100px";
+loginBtnBottom.style.fontWeight = "bold";
+
+regText.appendChild(regBtn);
+footer.appendChild(regText);
+footer.appendChild(loginBtnBottom);
+container.appendChild(footer);
+
+// 7. Dekorasi Tambahan (Jalan di pojok)
+const road = document.createElement('div');
+road.style.position = "absolute";
+road.style.bottom = "-50px";
+road.style.right = "-50px";
+road.style.width = "200px";
+road.style.height = "200px";
+road.style.background = "repeating-linear-gradient(45deg, #333, #333 30px, #fff 30px, #fff 45px)";
+road.style.transform = "rotate(15deg)";
+road.style.zIndex = "-1";
+container.appendChild(road);
