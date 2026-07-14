@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1092422901050",
+    "project_id": "fir-project-f2523",
+    "storage_bucket": "fir-project-f2523.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1092422901050:android:b8ab7398e7109476fac403",
+        "android_client_info": {
+          "package_name": "com.lauriell.Kimori.My"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCXOen6QUBViFje6wfQiIGHo5uNTuusizA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
