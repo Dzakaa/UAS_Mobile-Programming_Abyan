@@ -9,7 +9,15 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyAyRd3wGUSVB4tf6d_aY3i9swRtNHmYC-g",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "fir-project-f2523.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "fir-project-f2523",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "fir-project-f2523.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "1092422901050",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:1092422901050:web:06f80cd735e7fed8fac403"
+      }
     },
     "production": {
       "autoIncrement": true

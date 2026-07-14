@@ -10,12 +10,12 @@ import Constants from "expo-constants";
 
 // ─── Konfigurasi Firebase ─────────────────────────────────
 const firebaseConfig = {
-  apiKey: "AIzaSyAyRd3wGUSVB4tf6d_aY3i9swRtNHmYC-g",
-  authDomain: "fir-project-f2523.firebaseapp.com",
-  projectId: "fir-project-f2523",
-  storageBucket: "fir-project-f2523.firebasestorage.app",
-  messagingSenderId: "1092422901050",
-  appId: "1:1092422901050:web:06f80cd735e7fed8fac403",
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
 // ─── Initialize Firebase (singleton) ─────────────────────
@@ -29,22 +29,13 @@ export default app;
 
 // ─────────────────────────────────────────────────────────
 // FUNGSI FCM: Ambil Expo Push Token lalu simpan ke Firestore
-//
-// Cara kerja:
-// 1. Minta izin notifikasi dari user
-// 2. Ambil Expo Push Token (format: ExponentPushToken[xxxx])
-// 3. Simpan token ke Firestore: users/{uid}/fcmToken
-// 4. Expo Push Service yang nanti kirim notif ke device
-//    berdasarkan token ini — tidak butuh server sendiri!
 // ─────────────────────────────────────────────────────────
-export async function registerFCMToken(uid: string): Promise<string | null> {
-  // Hanya jalan di device fisik (tidak di emulator/web)
+export async function registerFCMToken(uid) {
   if (!Device.isDevice) {
     console.log("FCM hanya jalan di device fisik.");
     return null;
   }
 
-  // 1. Minta izin notifikasi
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 
@@ -58,8 +49,6 @@ export async function registerFCMToken(uid: string): Promise<string | null> {
     return null;
   }
 
-  // 2. Ambil Expo Push Token
-  // projectId diambil dari app.json → expo.extra.eas.projectId
   const projectId =
     Constants.expoConfig?.extra?.eas?.projectId ??
     Constants.easConfig?.projectId;
@@ -69,19 +58,17 @@ export async function registerFCMToken(uid: string): Promise<string | null> {
   );
   const token = tokenData.data;
 
-  // 3. Simpan token ke Firestore agar Cloud Functions bisa baca
   try {
     await setDoc(
       doc(db, "users", uid),
       { fcmToken: token, fcmUpdatedAt: new Date().toISOString() },
-      { merge: true }   // merge:true agar tidak overwrite field lain
+      { merge: true }
     );
     console.log("FCM token tersimpan:", token);
   } catch (e) {
     console.error("Gagal simpan FCM token:", e);
   }
 
-  // 4. Setting handler notifikasi saat app terbuka
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowAlert: true,
@@ -95,16 +82,8 @@ export async function registerFCMToken(uid: string): Promise<string | null> {
 
 // ─────────────────────────────────────────────────────────
 // FUNGSI JADWAL: Simpan preferensi jam notifikasi ke Firestore
-//
-// Cloud Functions akan baca ini dan kirim notif tepat waktu
-// ke semua device yang punya akun tersebut
 // ─────────────────────────────────────────────────────────
-export async function saveNotifSchedule(
-  uid: string,
-  pagi:  string,   // format "HH:MM", contoh "07:00"
-  sore:  string,   // format "HH:MM", contoh "15:00"
-  malam: string    // format "HH:MM", contoh "20:00"
-): Promise<void> {
+export async function saveNotifSchedule(uid, pagi, sore, malam) {
   await setDoc(
     doc(db, "users", uid),
     {
