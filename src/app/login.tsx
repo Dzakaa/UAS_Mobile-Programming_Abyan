@@ -1,240 +1,446 @@
-import React, { useEffect, useState } from 'react';
 import {
-  Keyboard,
+  PlusJakartaSans_200ExtraLight,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_700Bold,
+  useFonts as useJakartaFonts,
+} from '@expo-google-fonts/plus-jakarta-sans';
+import { Jaro_400Regular, useFonts as useJaroFonts } from '@expo-google-fonts/jaro';
+import { useRouter } from 'expo-router';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
   Dimensions,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
-  Image
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { signInWithEmailAndPassword } from 'firebase/auth';
 
-// Import Fonts
-import {
-  useFonts,
-  PlusJakartaSans_200ExtraLight,
-  PlusJakartaSans_300Light,
-  PlusJakartaSans_400Regular,
-  PlusJakartaSans_600SemiBold,
-} from '@expo-google-fonts/plus-jakarta-sans';
-import { Jaro_400Regular } from '@expo-google-fonts/jaro';
-
-// Import Firebase
 import { auth } from '../../firebase';
 
-// ─── RUMUS SKALA RESPONSIVE (Biar layarnya gak kepotong!) ───
+// ─── Canvas referensi Figma ───────────────────────────────
 const CANVAS_W = 390;
-const { width: DEVICE_W, height: DEVICE_H } = Dimensions.get('window');
-const S = DEVICE_W / CANVAS_W; // Faktor skala ngikutin lebar HP
+const CANVAS_H = 844;
 
-const a = (x: number, y: number) => ({ position: 'absolute' as const, left: x * S, top: y * S });
-const sz = (w: number, h: number) => ({ width: w * S, height: h * S });
+// ─── Helper: username → internal email (Firebase Auth) ──
+const toInternalEmail = (username: string) =>
+  `${username.toLowerCase().trim()}@kimorimy.app`;
 
 export default function LoginScreen() {
   const router = useRouter();
 
-  const [fontsLoaded] = useFonts({
+  // ── Scale factor: canvas Figma → lebar device aktual ──
+  const { width: deviceWidth } = Dimensions.get('window');
+  const scale = deviceWidth / CANVAS_W;
+
+  // ── Load Fonts ────────────────────────────────────────
+  const [jakartaLoaded] = useJakartaFonts({
     PlusJakartaSans_200ExtraLight,
-    PlusJakartaSans_300Light,
     PlusJakartaSans_400Regular,
-    PlusJakartaSans_600SemiBold,
-    Jaro_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_700Bold,
   });
+  const [jaroLoaded] = useJaroFonts({ Jaro_400Regular });
+  const fontsLoaded = jakartaLoaded && jaroLoaded;
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  // ── State ─────────────────────────────────────────────
+  const [username, setUsername]         = useState('');
+  const [password, setPassword]         = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [loading, setLoading]           = useState(false);
+  const [dots, setDots]                 = useState('.');
 
-  // ── STATE KEYBOARD (Biar layar nyusut pas keyboard naik) ──
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const trimmedUsername = useMemo(() => username.trim(), [username]);
 
+  // ── Race condition fix (auth listener) ────────────────
+  const isReady = useRef(false);
   useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => setKeyboardHeight(e.endCoordinates.height)
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardHeight(0)
-    );
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
+    const timer = setTimeout(() => { isReady.current = true; }, 300);
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user && isReady.current) router.replace('/');
+    });
+    return () => { clearTimeout(timer); unsubscribe(); };
+  }, [router]);
 
-  const [dotIndex, setDotIndex] = useState(0);
-  const DOTS = ['kela', 'kela.', 'kela..', 'kela...'];
-
+  // ── Animasi loading "kela..." → titik bertambah ───────
   useEffect(() => {
-    if (!loading) {
-      setDotIndex(0);
-      return;
-    }
-    const interval = setInterval(() => setDotIndex((p) => (p + 1) % 4), 400);
+    if (!loading) { setDots('.'); return; }
+    const interval = setInterval(() => {
+      setDots((prev) => (prev.length >= 3 ? '.' : prev + '.'));
+    }, 400);
     return () => clearInterval(interval);
   }, [loading]);
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      setErrorMsg('Kayaknya ada yang salah deh, coba cek lagi username dan passwornya dong');
+  // ── Login Handler ─────────────────────────────────────
+  const onLogin = async () => {
+    setErrorMessage('');
+    if (!trimmedUsername || !password) {
+      setErrorMessage('Username dan password wajib diisi.');
       return;
     }
     setLoading(true);
-    setErrorMsg('');
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      await signInWithEmailAndPassword(auth, toInternalEmail(trimmedUsername), password);
       router.replace('/');
-    } catch (error: any) {
-      setErrorMsg('Kayaknya ada yang salah deh, coba cek lagi username dan passwornya dong');
+    } catch {
+      // Semua error auth diseragamkan jadi satu pesan sesuai desain
+      setErrorMessage('error');
     } finally {
       setLoading(false);
     }
   };
 
-  if (!fontsLoaded) return <View style={styles.background} />;
+  // ── Navigasi ke Register (replace agar listener mati) ─
+  const goToRegister = () => router.replace('/register');
 
+  if (!fontsLoaded) {
+    return <View style={styles.loadingScreen} />;
+  }
+
+  // ─────────────────────────────────────────────────────
+  // RENDER — semua posisi dihitung dari koordinat Figma
+  // dikali `scale` supaya proporsional di semua device
+  // ─────────────────────────────────────────────────────
   return (
-    // Wadah Utama: Tingginya bakal dipotong sama keyboard biar viewable areanya pas
-    <View style={[styles.background, { paddingBottom: keyboardHeight }]}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.select({ ios: 'padding', android: undefined })}
+    >
+      <View style={[styles.canvas, { width: deviceWidth, height: CANVAS_H * scale }]}>
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        bounces={false}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled" // Biar pas ngetik kursor gak lari kalau layar disentuh
-      >
-        {/* Kertas Canvas (MinHeight dipake biar bisa digulir ke bawah) */}
-        <View style={styles.canvas}>
+        {/* ── "Kimori .My" — X:20 Y:101 ─────────────────── */}
+        <Text
+          style={[
+            styles.kimoriText,
+            pos(20, 101, scale),
+          ]}
+        >
+          Kimori .My
+        </Text>
 
-          {/* ORNAMEN GAMBAR DI BELAKANG (WATERMARK) */}
-          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { zIndex: 0 }]}>
-            <Image source={require('../../assets/icon/pohon3.png')} style={[styles.img, a(335, 55), sz(59, 109)]} resizeMode="contain" />
-            <Image source={require('../../assets/icon/Kucing1.png')} style={[styles.img, a(290, 431), sz(123, 101)]} resizeMode="contain" />
-            <Image source={require('../../assets/icon/pohon1.png')} style={[styles.img, a(326, 596), sz(79, 74)]} resizeMode="contain" />
-            <Image source={require('../../assets/icon/pohon2.png')} style={[styles.img, a(1, 696), sz(80, 125)]} resizeMode="contain" />
-          </View>
+        {/* Garis bawah "Kimori .My" — X:20 Y:133 W:110 H:4 */}
+        <View
+          style={[
+            styles.kimoriLine,
+            pos(20, 133, scale),
+            sizeStyle(110, 4, scale),
+          ]}
+        />
 
-          {/* KONTEN UTAMA */}
-          <Text style={[styles.kimoriText, a(20, 101)]}>Kimori.My</Text>
-          <View style={[styles.kimoriLine, a(20, 133), sz(110, 4)]} />
-
-          <View style={[styles.greetingBox, a(27, 157), sz(336, 65)]}>
-            <Text style={styles.greetingText}>Gimana Kabarmu Hari Ini?</Text>
-          </View>
-
-          <Text style={[styles.subtitleText, a(37, 237)]}>Ayoo, ambil waktu sejenak untuk memahami pikiranmu.</Text>
-          <View style={[styles.subtitleLine, a(39, 286), sz(288, 1.5)]} />
-
-          <Text style={[styles.okaeriText, a(159, 356)]}>Okaeri</Text>
-          <View style={[styles.okaeriLine, a(159, 382), sz(59, 1)]} />
-          <View style={[styles.okaeriLine, a(221, 382), sz(2, 1)]} />
-          <View style={[styles.okaeriLine, a(225, 382), sz(2, 1)]} />
-          <View style={[styles.okaeriLine, a(229, 382), sz(2, 1)]} />
-
-          <Text style={[styles.inputLabel, a(18, 482)]}>Masukkan Email</Text>
-          <TextInput
-            style={[styles.inputBox, a(18, 512), sz(354, 55)]}
-            placeholder="Email"
-            placeholderTextColor="rgba(0,0,0,0.5)"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-
-          <Text style={[styles.inputLabel, a(18, 586)]}>Masukkan Password</Text>
-          <View style={[styles.inputBoxPassword, a(18, 615), sz(354, 55)]}>
-            <TextInput
-              style={styles.passwordInput}
-              placeholder="Password"
-              placeholderTextColor="rgba(0,0,0,0.5)"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-            />
-            <Pressable onPress={() => setShowPassword(!showPassword)} style={{ padding: 5 * S }}>
-              <Text style={{ fontSize: 20 * S }}>{showPassword ? '🙈' : '👁️'}</Text>
-            </Pressable>
-          </View>
-
-          {errorMsg ? (
-            <Text style={[styles.errorText, a(70, 683), sz(250, 40)]}>{errorMsg}</Text>
-          ) : null}
-
-          {loading ? (
-            <Text style={[styles.loadingText, a(182, 689)]}>{DOTS[dotIndex]}</Text>
-          ) : null}
-
-          <Pressable
-            style={({ pressed }) => [styles.loginBtnBox, a(133, 734), sz(123, 39), pressed && { opacity: 0.7 }]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            <Text style={styles.loginBtnText}>Login Yukk.</Text>
-          </Pressable>
-
-          <Text style={[styles.registerTextContainer, a(8, 808), { width: 374 * S }]}>
-            Yahh kamu belum ada akun yahh, bikin dulu yuu,{' '}
-            <Text style={styles.registerLink} onPress={() => router.push('/register')}>
-              Register
-            </Text>
+        {/* ── Kotak "Gimana Kabarmu Hari ini?" ──────────── */}
+        {/* X:27 Y:157 W:362 H:65, radius 12 */}
+        <View
+          style={[
+            styles.titleBox,
+            pos(27, 157, scale),
+            sizeStyle(362, 65, scale),
+          ]}
+        >
+          <Text style={[styles.titleText, { fontSize: 28 * scale }]}>
+            Gimana Kabarmu Hari ini?
           </Text>
-
         </View>
-      </ScrollView>
-    </View>
+
+        {/* ── Subtitle — X:37 Y:237 ─────────────────────── */}
+        <Text
+          style={[
+            styles.subtitleText,
+            pos(37, 237, scale),
+            { fontSize: 17 * scale, width: 320 * scale },
+          ]}
+        >
+          Ayoo, ambil waktu sejenak untuk memahami pikiranmu.
+        </Text>
+
+        {/* Garis bawah subtitle — X:39 Y:286 W:288 H:1.5 */}
+        <View
+          style={[
+            styles.subtitleLine,
+            pos(39, 286, scale),
+            sizeStyle(288, 1.5, scale),
+          ]}
+        />
+
+        {/* ── "Okaeri" — X:159 Y:356 ─────────────────────── */}
+        <Text
+          style={[
+            styles.okaeriText,
+            pos(159, 356, scale),
+            { fontSize: 19 * scale },
+          ]}
+        >
+          Okaeri
+        </Text>
+
+        {/* 4 garis dekoratif bawah "Okaeri" — Y:382, W:59 H:1 */}
+        <View style={[styles.okaeriLine, pos(159, 382, scale), sizeStyle(59, 1, scale)]} />
+        <View style={[styles.okaeriLine, pos(221, 382, scale), sizeStyle(59, 1, scale)]} />
+        <View style={[styles.okaeriLine, pos(225, 382, scale), sizeStyle(2, 1, scale)]} />
+        <View style={[styles.okaeriLine, pos(229, 382, scale), sizeStyle(59, 1, scale)]} />
+
+        {/* ════════════ ASET GAMBAR (pasang manual) ════════════ */}
+        {/* pohon_3_05.png → X:335 Y:55 W:59 H:109 */}
+        <View style={[styles.imagePlaceholder, pos(335, 55, scale), sizeStyle(59, 109, scale)]} />
+
+        {/* Kucing_1_01.png → X:290 Y:431 W:123 H:101 */}
+        <View style={[styles.imagePlaceholder, pos(290, 431, scale), sizeStyle(123, 101, scale)]} />
+
+        {/* pohon_1_03.png → X:326 Y:596 W:79 H:74 */}
+        <View style={[styles.imagePlaceholder, pos(326, 596, scale), sizeStyle(79, 74, scale)]} />
+
+        {/* pohon_2_04.png → X:1 Y:896 W:80 H:125 */}
+        <View style={[styles.imagePlaceholder, pos(1, 896, scale), sizeStyle(80, 125, scale)]} />
+        {/* ═══════════════════════════════════════════════════ */}
+
+        {/* ── "Masukkan Username" — X:18 Y:482 ───────────── */}
+        <Text style={[styles.fieldLabel, pos(18, 482, scale), { fontSize: 20 * scale }]}>
+          Masukkan Username
+        </Text>
+
+        {/* Input Username — X:18 Y:512 W:371 H:55 radius:15 */}
+        <View
+          style={[
+            styles.inputBox,
+            pos(18, 512, scale),
+            sizeStyle(371, 55, scale),
+          ]}
+        >
+          <TextInput
+            value={username}
+            onChangeText={(t) => setUsername(t.replace(/\s/g, ''))}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="Username"
+            placeholderTextColor="rgba(0,0,0,0.5)"
+            maxLength={15}
+            style={[styles.inputText, { fontSize: 20 * scale }]}
+          />
+        </View>
+
+        {/* ── "Masukkan Password" — X:18 Y:586 ───────────── */}
+        <Text style={[styles.fieldLabel, pos(18, 586, scale), { fontSize: 20 * scale }]}>
+          Masukkan Password
+        </Text>
+
+        {/* Input Password — X:18 Y:615 W:371 H:55 radius:15 */}
+        <View
+          style={[
+            styles.inputBox,
+            pos(18, 615, scale),
+            sizeStyle(371, 55, scale),
+          ]}
+        >
+          <TextInput
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            placeholder="Password"
+            placeholderTextColor="rgba(0,0,0,0.5)"
+            style={[styles.inputText, { fontSize: 20 * scale }]}
+          />
+        </View>
+
+        {/* ── Error message — X:81 Y:693 ─────────────────── */}
+        {errorMessage ? (
+          <Text
+            style={[
+              styles.errorText,
+              pos(81, 693, scale),
+              { fontSize: 11 * scale, width: 228 * scale },
+            ]}
+          >
+            Kayaknya ada yang salah deh, coba cek lagi username dan passwornya dong
+          </Text>
+        ) : null}
+
+        {/* ── Loading "kela..." — X:182 Y:699, font Jaro ─── */}
+        {loading && (
+          <Text
+            style={[
+              styles.kelaText,
+              pos(182, 699, scale),
+              { fontSize: 18 * scale },
+            ]}
+          >
+            kela{dots}
+          </Text>
+        )}
+
+        {/* ── Tombol "Login Yukk." — X:137 Y:744 W:123 H:39 */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.loginButton,
+            pos(137, 744, scale),
+            sizeStyle(123, 39, scale),
+            pressed && { opacity: 0.75 },
+          ]}
+          onPress={onLogin}
+          disabled={loading}
+        >
+          <Text style={[styles.loginButtonText, { fontSize: 19 * scale }]}>
+            Login Yukk.
+          </Text>
+        </Pressable>
+
+        {/* ── Footer register — X:8 Y:818 ────────────────── */}
+        <Text
+          style={[
+            styles.registerText,
+            pos(8, 818, scale),
+            { fontSize: 17 * scale, width: 374 * scale },
+          ]}
+        >
+          Yahh kamu belum ada akun yahh, bikin dulu yuu,{' '}
+          <Text style={styles.registerLink} onPress={goToRegister}>
+            Register
+          </Text>
+        </Text>
+
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
-const FONT_REG = 'PlusJakartaSans_400Regular';
-const FONT_EXTRA = 'PlusJakartaSans_200ExtraLight';
-const FONT_SEMI = 'PlusJakartaSans_600SemiBold';
-const FONT_LOADING = 'Jaro_400Regular';
+// ─── Helper untuk posisi & ukuran absolut ─────────────────
+function pos(x: number, y: number, scale: number) {
+  return { left: x * scale, top: y * scale };
+}
+function sizeStyle(w: number, h: number, scale: number) {
+  return { width: w * scale, height: h * scale };
+}
+
+// ─── Styles ───────────────────────────────────────────────
+const BG = '#FFB37C';
 
 const styles = StyleSheet.create({
-  background: { flex: 1, backgroundColor: '#FFB37C' },
-  scrollContainer: { flexGrow: 1 },
-  canvas: { position: 'relative', minHeight: 900 * S, width: DEVICE_W },
-  img: { position: 'absolute' },
+  loadingScreen: { flex: 1, backgroundColor: BG },
 
-  kimoriText: { fontFamily: FONT_EXTRA, fontSize: 20 * S, color: '#000000' },
-  kimoriLine: { backgroundColor: '#000000' },
+  canvas: {
+    backgroundColor: BG,
+    position: 'relative',
+    overflow: 'hidden',
+  },
 
-  greetingBox: { borderRadius: 12 * S, backgroundColor: 'rgba(255,255,255,0.4)', justifyContent: 'center', alignItems: 'center' },
-  greetingText: { fontFamily: FONT_SEMI, fontSize: 24 * S, color: '#000000', fontWeight: 'bold', textAlign: 'center' }, // Font dikecilin dikit biar gak nabrak
+  // "Kimori .My"
+  kimoriText: {
+    position: 'absolute',
+    fontFamily: 'PlusJakartaSans_200ExtraLight',
+    fontSize: 20,
+    color: '#000000',
+  },
+  kimoriLine: {
+    position: 'absolute',
+    backgroundColor: '#000000',
+  },
 
-  subtitleText: { fontFamily: FONT_REG, fontSize: 16 * S, color: '#000000', width: 310 * S }, // Dikasih width biar rapi
-  subtitleLine: { backgroundColor: '#E2E8F0' },
+  // Kotak judul
+  titleBox: {
+    position: 'absolute',
+    backgroundColor: '#EAF1F0',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  titleText: {
+    fontFamily: 'PlusJakartaSans_700Bold',
+    color: '#000000',
+    textAlign: 'center',
+  },
 
-  okaeriText: { fontFamily: FONT_REG, fontSize: 19 * S, color: '#000000' },
-  okaeriLine: { backgroundColor: '#D86262' },
+  // Subtitle
+  subtitleText: {
+    position: 'absolute',
+    fontFamily: 'PlusJakartaSans_400Regular',
+    color: '#000000',
+    lineHeight: 22,
+  },
+  subtitleLine: {
+    position: 'absolute',
+    backgroundColor: '#E2E8F0',
+  },
 
-  inputLabel: { fontFamily: FONT_REG, fontSize: 20 * S, color: '#000000' },
+  // Okaeri
+  okaeriText: {
+    position: 'absolute',
+    fontFamily: 'PlusJakartaSans_400Regular',
+    color: '#000000',
+  },
+  okaeriLine: {
+    position: 'absolute',
+    backgroundColor: '#D86262',
+  },
+
+  // Placeholder gambar (pasang manual nanti)
+  imagePlaceholder: {
+    position: 'absolute',
+    backgroundColor: 'transparent',
+  },
+
+  // Field label
+  fieldLabel: {
+    position: 'absolute',
+    fontFamily: 'PlusJakartaSans_400Regular',
+    color: '#000000',
+  },
+
+  // Input box
   inputBox: {
-    borderRadius: 15 * S, backgroundColor: '#FFFFFF', paddingHorizontal: 15 * S,
-    fontFamily: FONT_REG, fontSize: 18 * S, color: '#000000'
+    position: 'absolute',
+    backgroundColor: '#EAF1F0',
+    borderRadius: 15,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  inputText: {
+    fontFamily: 'PlusJakartaSans_400Regular',
+    color: '#000000',
+    padding: 0,
   },
 
-  inputBoxPassword: {
-    borderRadius: 15 * S, backgroundColor: '#FFFFFF', paddingHorizontal: 15 * S,
-    flexDirection: 'row', alignItems: 'center'
+  // Error
+  errorText: {
+    position: 'absolute',
+    fontFamily: 'PlusJakartaSans_400Regular',
+    color: '#FF0000',
+    textAlign: 'center',
   },
-  passwordInput: { flex: 1, fontFamily: FONT_REG, fontSize: 18 * S, color: '#000000' },
 
-  errorText: { fontFamily: FONT_REG, fontSize: 11 * S, color: '#FF0000', textAlign: 'center' },
-  loadingText: { fontFamily: FONT_LOADING, fontSize: 18 * S, color: '#1E90FF' },
+  // Loading "kela..."
+  kelaText: {
+    position: 'absolute',
+    fontFamily: 'Jaro_400Regular',
+    color: '#1E90FF',
+  },
 
-  loginBtnBox: { borderRadius: 15 * S, backgroundColor: 'rgba(255,255,255,0.4)', justifyContent: 'center', alignItems: 'center' },
-  loginBtnText: { fontFamily: FONT_REG, fontSize: 19 * S, color: '#000000' },
+  // Tombol Login
+  loginButton: {
+    position: 'absolute',
+    backgroundColor: '#EAF1F0',
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loginButtonText: {
+    fontFamily: 'PlusJakartaSans_400Regular',
+    color: '#000000',
+  },
 
-  registerTextContainer: { fontFamily: FONT_SEMI, fontSize: 15 * S, color: '#000000', textAlign: 'center' }, // Dibuat center biar seimbang
-  registerLink: { fontFamily: FONT_SEMI, fontSize: 15 * S, color: '#1E90FF', textDecorationLine: 'underline' },
+  // Footer register
+  registerText: {
+    position: 'absolute',
+    fontFamily: 'PlusJakartaSans_500Medium',
+    color: '#000000',
+    textAlign: 'left',
+    lineHeight: 22,
+  },
+  registerLink: {
+    fontFamily: 'PlusJakartaSans_500Medium',
+    color: '#000000',
+    textDecorationLine: 'underline',
+  },
 });

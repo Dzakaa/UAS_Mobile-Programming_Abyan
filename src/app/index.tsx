@@ -184,13 +184,18 @@ export default function HomeScreen() {
 
   // ── Export JSON ───────────────────────────────────────
   const handleExport = async () => {
-    if (!uid) return;
+    if (!uid) {
+      Alert.alert('Error', 'User belum login.');
+      return;
+    }
     try {
-      const [notesSnap, assessSnap] = await Promise.all([
+      // 1. Ambil semua data dari Firestore
+      const [notesSnap, assessSnap, userSnap] = await Promise.all([
         getDocs(collection(db, 'users', uid, 'notes')),
         getDocs(collection(db, 'users', uid, 'assessments')),
+        getDoc(doc(db, 'users', uid)),
       ]);
-      const userSnap = await getDoc(doc(db, 'users', uid));
+
       const userData = userSnap.exists() ? userSnap.data() : {};
 
       const exportData = {
@@ -201,21 +206,40 @@ export default function HomeScreen() {
         assessments: assessSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
       };
 
+      // 2. Tulis ke file lokal
       const fileName = `kimorimy_backup_${new Date().toISOString().split('T')[0]}.json`;
       const filePath = `${FileSystem.documentDirectory}${fileName}`;
-      await FileSystem.writeAsStringAsync(filePath, JSON.stringify(exportData, null, 2));
+      await FileSystem.writeAsStringAsync(
+        filePath,
+        JSON.stringify(exportData, null, 2),
+        { encoding: FileSystem.EncodingType.UTF8 }
+      );
 
-      if (await Sharing.isAvailableAsync()) {
+      // 3. Cek apakah sharing tersedia
+      const sharingAvailable = await Sharing.isAvailableAsync();
+
+      if (sharingAvailable) {
+        // Share sheet — user pilih WA / ZArchiver / Drive dll
         await Sharing.shareAsync(filePath, {
           mimeType:    'application/json',
           dialogTitle: 'Kirim / Simpan Backup Kimori .My',
           UTI:         'public.json',
         });
       } else {
-        Alert.alert('File Tersimpan', `Backup disimpan di:\n${filePath}`);
+        // Fallback: beritahu lokasi file
+        Alert.alert(
+          'File Tersimpan ✅',
+          `Backup disimpan di storage internal:\n\n${filePath}\n\nBuka via file manager untuk akses file.`
+        );
       }
-    } catch {
-      Alert.alert('Gagal', 'Gagal mengekspor data. Coba lagi ya!');
+
+    } catch (err: unknown) {
+      // Tampilkan error spesifik untuk debugging
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert(
+        'Gagal Export',
+        `Detail error:\n${msg}\n\nPastikan koneksi internet aktif untuk mengambil data.`
+      );
     }
   };
 

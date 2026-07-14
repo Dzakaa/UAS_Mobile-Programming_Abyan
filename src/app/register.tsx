@@ -98,16 +98,22 @@ export default function RegisterScreen() {
       const internalEmail  = toInternalEmail(trimUser);
       const userCredential = await createUserWithEmailAndPassword(auth, internalEmail, password);
 
+      // Simpan ke Firestore
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         username:  trimUser,
         email:     email.trim(),
         createdAt: serverTimestamp(),
       });
 
-      // Tampilkan success screen SEBELUM signOut
-      // untuk cegah race condition dengan auth listener di login
+      // Paksa stage ke success SEBELUM signOut supaya UI sudah
+      // berganti tampilan sebelum auth state berubah ke null
       setStage('success');
+
+      // Tunggu sebentar agar React punya waktu render success screen
+      // sebelum signOut memicu auth listener
+      await new Promise((r) => setTimeout(r, 100));
       await signOut(auth);
+
     } catch (error: unknown) {
       const e = error as { code?: string };
       if (e.code === 'auth/email-already-in-use') {
