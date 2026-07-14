@@ -1,42 +1,53 @@
 {
   "expo": {
-    "name": "Inilah My Aplikasi",
+    "name": "Kimori .My",
     "slug": "mobile_app",
+    "scheme": "kimorimy",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "mobileapp",
+    "icon": "./assets/icon/mylogo.png",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/icon.png"
+      "icon": "./assets/images/mylogo.png"
+    },
+    "notification": {
+      "icon": "./assets/icon/notif_logo.png",
+      "color": "#E6B8B1"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/icon .png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#E4C0B4",
+        "foregroundImage": "./assets/icon/mylogo.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.dzaaka.mobile_app"
+      "package": "com.lauriell.Kimori.My",
+      "googleServicesFile": ".android/app/google-services.json"
     },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon/mylogo.png",
+          "color": "#7D6B91"
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#E4C0B4",
           "android": {
-            "image": "./assets/images/splash-icon.png",
+            "image": "./assets/icon/mylogo.png",
             "imageWidth": 76
           }
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,32 +1,34 @@
-import { HiMelody_400Regular, useFonts } from '@expo-google-fonts/hi-melody';
-import { useRouter } from 'expo-router';
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  updateDoc,
-} from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+  Animated, BackHandler, Dimensions, Image,
+  Keyboard, Platform, Pressable,
+  ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
-
+import { useRouter } from 'expo-router';
+import {
+  addDoc, collection, deleteDoc, doc,
+  getDoc, onSnapshot, orderBy, query,
+  serverTimestamp, updateDoc,
+} from 'firebase/firestore';
+import {
+  useFonts,
+  PlusJakartaSans_200ExtraLight,
+  PlusJakartaSans_300Light,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_600SemiBold,
+} from '@expo-google-fonts/plus-jakarta-sans';
+import { Jaro_400Regular } from '@expo-google-fonts/jaro';
 import { auth, db } from '../../firebase';
 
+// ─── Canvas & scale ───────────────────────────────────────
+const CANVAS_W = 390;
+const { width: DW } = Dimensions.get('window');
+const S = DW / CANVAS_W;
+
+const a  = (x: number, y: number) => ({ position: 'absolute' as const, left: x * S, top: y * S });
+const sz = (w: number, h: number) => ({ width: w * S, height: h * S });
+
+// ─── API ──────────────────────────────────────────────────
 const API_KEY = '289bd9bd4013ff528a68dea82cecbe22';
 
 type WeatherData = {
@@ -34,10 +36,7 @@ type WeatherData = {
   description: string; icon: string;
   cityName: string; country: string; windSpeed: number;
 };
-type SavedCity  = { id: string; name: string };
-type PendingRow = { kind: 'pending'; tempId: string };
-type ListRow    = { kind: 'saved' } & SavedCity;
-type Row        = ListRow | PendingRow;
+type SavedCity = { id: string; name: string };
 
 function wEmoji(icon: string) {
   if (icon.startsWith('01')) return '☀️';
@@ -49,14 +48,39 @@ function wEmoji(icon: string) {
   return '🌤️';
 }
 
+// ─────────────────────────────────────────────────────────
 export default function CuacaScreen() {
   const router = useRouter();
 
-  const [fontsLoaded] = useFonts({ HiMelody: HiMelody_400Regular });
+  const [fontsLoaded] = useFonts({
+    PlusJakartaSans_200ExtraLight,
+    PlusJakartaSans_300Light,
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_600SemiBold,
+    Jaro_400Regular,
+  });
 
-  // ── Auth + Username ───────────────────────────────────
+  // ── Auth ──────────────────────────────────────────────
   const [uid, setUid]           = useState<string | null>(null);
   const [username, setUsername] = useState('');
+
+  // ── STATE KEYBOARD (Biar layar nyusut pas keyboard naik) ──
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => setKeyboardHeight(e.endCoordinates.height)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardHeight(0)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged(async (user) => {
@@ -64,105 +88,69 @@ export default function CuacaScreen() {
       setUid(user.uid);
       try {
         const snap = await getDoc(doc(db, 'users', user.uid));
-        if (snap.exists()) setUsername(snap.data().username ?? '');
-      } catch { /* ignore */ }
+        if (snap.exists()) setUsername(snap.data().username ?? 'User');
+      } catch { setUsername('User'); }
     });
     return unsub;
   }, [router]);
 
   // ── Weather ───────────────────────────────────────────
-  const [cityInput, setCityInput] = useState('');
-  const [weather, setWeather]     = useState<WeatherData | null>(null);
+  const [cityInput, setCityInput]     = useState('');
+  const [weather, setWeather]         = useState<WeatherData | null>(null);
   const [weatherError, setWeatherError] = useState('');
 
-  // ── Loading states ────────────────────────────────────
-  // weatherLoading : saat fetch cuaca berlangsung
-  // addLoading     : saat menyimpan kota ke Firestore
-  const [weatherLoading, setWeatherLoading] = useState(false);
-  const [addLoading, setAddLoading]         = useState(false);
+  // ── Favorites ─────────────────────────────────────────
+  const [favorites, setFavorites]     = useState<SavedCity[]>([]);
+  const [editingId, setEditingId]     = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
 
-  // Kela... animation — aktif jika salah satu loading true
-  const anyLoading = weatherLoading || addLoading;
-  const [dotIndex, setDotIndex] = useState(0);
-  const DOTS = ['Kela', 'Kela.', 'Kela..', 'Kela...'];
+  // ── Loading ───────────────────────────────────────────
+  const [loading, setLoading] = useState(false);
+  const [dots, setDots]       = useState('.');
   useEffect(() => {
-    if (!anyLoading) { setDotIndex(0); return; }
-    const i = setInterval(() => setDotIndex((p) => (p + 1) % 4), 400);
+    if (!loading) { setDots('.'); return; }
+    const i = setInterval(() => setDots((p) => p.length >= 3 ? '.' : p + '.'), 400);
     return () => clearInterval(i);
-  }, [anyLoading]);
+  }, [loading]);
 
-  // ── Toast Notification ────────────────────────────────
+  // ── Toast ─────────────────────────────────────────────
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const [toastMsg, setToastMsg] = useState('');
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const showToast = (msg: string) => {
-    // Cancel timer sebelumnya jika ada (rapid fire)
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastMsg(msg);
     toastOpacity.setValue(0);
     Animated.sequence([
       Animated.timing(toastOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-      Animated.delay(2500),
+      Animated.delay(2000),
       Animated.timing(toastOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
     ]).start();
   };
 
-  // ── CRUD + Realtime Snapshot ───────────────────────────
-  const [rows, setRows]           = useState<Row[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState('');
-  const [pendingName, setPendingName] = useState('');
-
-  // Ref untuk deteksi kota baru dari perangkat lain (realtime notif)
-  const knownIdsRef    = useRef<Set<string>>(new Set());
-  const isInitialRef   = useRef(true);   // skip notif saat pertama load
-
+  // ── Realtime Firestore ────────────────────────────────
   useEffect(() => {
     if (!uid) return;
     const q = query(
       collection(db, 'users', uid, 'cities'),
-      orderBy('addedAt', 'asc'),
+      orderBy('addedAt', 'desc'),
     );
-    const unsub = onSnapshot(q, (snap) => {
-      const fetched: SavedCity[] = snap.docs.map((d) => ({
-        id: d.id, name: d.data().name ?? '',
-      }));
-
-      // ── Deteksi kota baru → tampilkan notifikasi ──
-      if (!isInitialRef.current) {
-        fetched.forEach((city) => {
-          if (!knownIdsRef.current.has(city.id)) {
-            // Kota ini belum dikenal → baru ditambahkan
-            // (bisa dari HP ini atau HP lain dengan akun sama)
-            showToast(`XD. "${city.name}" berhasil ditambahkan ke favorit!`);
-          }
-        });
-      }
-
-      // Update set ID yang dikenal
-      knownIdsRef.current = new Set(fetched.map((c) => c.id));
-      isInitialRef.current = false;
-
-      // Gabungkan dengan pending rows yang mungkin ada
-      setRows((prev) => {
-        const pending = prev.filter((r) => r.kind === 'pending');
-        return [
-          ...fetched.map((c) => ({ kind: 'saved' as const, ...c })),
-          ...pending,
-        ];
-      });
+    return onSnapshot(q, (snap) => {
+      setFavorites(snap.docs.map((d) => ({ id: d.id, name: d.data().name ?? '' })));
     });
-    return unsub;
   }, [uid]);
 
-  // ── Fetch cuaca (top "Tambah" / "Cek Cuaca dulu") ─────
+  // ── Hardware back → home ──────────────────────────────
+  useEffect(() => {
+    const h = BackHandler.addEventListener('hardwareBackPress', () => {
+      router.replace('/'); return true;
+    });
+    return () => h.remove();
+  }, []);
+
+  // ── Fetch cuaca ───────────────────────────────────────
   const fetchWeather = async (city: string) => {
     const t = city.trim();
     if (!t) return;
-    setWeatherLoading(true);
-    setWeatherError('');
-    setWeather(null);
+    setLoading(true); setWeatherError(''); setWeather(null);
     try {
       const res  = await fetch(
         `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(t)}&appid=${API_KEY}&units=metric&lang=id`
@@ -179,418 +167,309 @@ export default function CuacaScreen() {
         country: data.sys.country,
         windSpeed: data.wind.speed,
       });
-    } catch {
-      setWeatherError('Gagal konek ke API 😢');
-    } finally {
-      setWeatherLoading(false);
+    } catch { setWeatherError('Gagal konek ke API 😢'); }
+    finally  { setLoading(false); }
+  };
+
+  // ── Tambah favorit ────────────────────────────────────
+  const handleAddFavorite = async () => {
+    if (!weather || !uid) { showToast('Cari kotanya dulu yuk!'); return; }
+    if (favorites.some((f) => f.name.toLowerCase() === weather.cityName.toLowerCase())) {
+      showToast(`${weather.cityName} udah ada di favorit!`); return;
     }
-  };
-
-  // ── Top "Tambah" → CEK CUACA (bukan tambah favorit) ──
-  const handleTopTambah = () => {
-    fetchWeather(cityInput);
-  };
-
-  // ── Green "Tambah" → buat baris pending di list ───────
-  const handleGreenTambah = () => {
-    const hasPending = rows.some((r) => r.kind === 'pending');
-    if (hasPending) return;
-    setPendingName('');
-    setRows((prev) => [...prev, { kind: 'pending', tempId: Date.now().toString() }]);
-  };
-
-  // ── Simpan pending → Firestore ────────────────────────
-  const handleSavePending = async () => {
-    const name = pendingName.trim();
-    setRows((prev) => prev.filter((r) => r.kind !== 'pending'));
-    if (!name || !uid) return;
-    setAddLoading(true);
+    setLoading(true);
     try {
       await addDoc(collection(db, 'users', uid, 'cities'), {
-        name, addedAt: serverTimestamp(),
+        name: weather.cityName, addedAt: serverTimestamp(),
       });
-      // Notif akan muncul otomatis dari onSnapshot
-    } finally {
-      setAddLoading(false);
-    }
+      showToast(`🎉 ${weather.cityName} masuk kota favorit!`);
+    } catch { showToast('Gagal menyimpan ke favorit.'); }
+    finally  { setLoading(false); }
   };
 
-  // ── DELETE ────────────────────────────────────────────
+  // ── Hapus favorit ─────────────────────────────────────
   const handleDelete = async (id: string) => {
     if (!uid) return;
-    await deleteDoc(doc(db, 'users', uid, 'cities', id));
+    try { await deleteDoc(doc(db, 'users', uid, 'cities', id)); }
+    catch { showToast('Gagal menghapus kota.'); }
   };
 
-  // ── UPDATE ────────────────────────────────────────────
+  // ── Simpan edit ───────────────────────────────────────
   const handleSaveEdit = async () => {
     if (!uid || !editingId || !editingName.trim()) return;
-    setAddLoading(true);
+    setLoading(true);
     try {
-      await updateDoc(doc(db, 'users', uid, 'cities', editingId), {
-        name: editingName.trim(),
-      });
+      await updateDoc(doc(db, 'users', uid, 'cities', editingId), { name: editingName.trim() });
       setEditingId(null);
-    } finally {
-      setAddLoading(false);
-    }
+      showToast('Nama kota berhasil diubah!');
+    } catch { showToast('Gagal mengubah nama kota.'); }
+    finally  { setLoading(false); }
   };
 
-  // ── Nav loading ───────────────────────────────────────
-  const [navLoading, setNavLoading] = useState(false);
-  const [navDot, setNavDot]         = useState(0);
-  useEffect(() => {
-    if (!navLoading) { setNavDot(0); return; }
-    const i = setInterval(() => setNavDot((p) => (p + 1) % 4), 400);
-    return () => clearInterval(i);
-  }, [navLoading]);
-
-  const onHalamanUtama = async () => {
-    setNavLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    router.replace('/');
-  };
-
-  if (!fontsLoaded) return <View style={styles.loadingScreen} />;
+  if (!fontsLoaded) return <View style={styles.bg} />;
 
   // ─────────────────────────────────────────────────────
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.select({ ios: 'padding', android: undefined })}
-    >
-      <View style={styles.outerContainer}>
+    // WADAH UTAMA KITA: Tingginya dipotong sebesar keyboard biar canvas bisa discroll enak
+    <View style={[styles.bg, { paddingBottom: keyboardHeight }]}>
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { minHeight: 950 * S }]}
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={[styles.canvas, { width: DW }]}>
 
-        {/* ── Toast Notification ─────────────────────── */}
-        <Animated.View style={[styles.toast, { opacity: toastOpacity }]}>
-          <Text style={styles.toastText}>{toastMsg}</Text>
-        </Animated.View>
+          {/* ── Toast — X:20 top:50 ───────────────────── */}
+          <Animated.View style={[styles.toast, { opacity: toastOpacity }]}>
+            <Text style={styles.toastText}>{toastMsg}</Text>
+          </Animated.View>
 
-        {/* ════════════════════════════════════════════
-            TOP — sky blue, scrollable
-        ════════════════════════════════════════════ */}
-        <ScrollView
-          style={styles.topScroll}
-          contentContainerStyle={styles.topContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Row: "Cek Cuaca dulu" kiri + "Haii Username" kanan */}
-          <View style={styles.topRow}>
-            <Pressable
-              style={({ pressed }) => [styles.cekBtn, pressed && { opacity: 0.75 }]}
-              onPress={() => fetchWeather(cityInput)}
-              disabled={weatherLoading}
-            >
-              <Text style={styles.cekBtnText}>Cek Cuaca dulu</Text>
-            </Pressable>
-            {username ? (
-              <Text style={styles.greetingText}>Haii, {username}</Text>
-            ) : null}
+          {/* ── "Haii, Username" — X:11 Y:19 ─────────── */}
+          <Text style={[styles.greeting, a(11, 19)]}>
+            Haii, {username || 'User'}!
+          </Text>
+
+          {/* ── "Kimori .My" — X:300 Y:10 ────────────── */}
+          <Text style={[styles.kimoriText, a(300, 10)]}>Kimori .My</Text>
+
+          {/* ── Indikator "Cek Cuaca..." — X:12 Y:44 W:133 H:20 ── */}
+          <View style={[styles.indicatorBox, a(12, 44), sz(133, 20)]}>
+            <Text style={styles.indicatorText}>Cek Cuaca...</Text>
           </View>
 
-          {/* "Inilah My Aplikasi" + garis */}
-          <View style={styles.appLabelWrap}>
-            <Text style={styles.appLabel}>Inilah My Aplikasi</Text>
-            <View style={styles.dividerLine} />
-          </View>
+          {/* ── "Masukkan Kotamu!" — X:13 Y:102 ─────── */}
+          <Text style={[styles.inputLabel, a(13, 102)]}>Masukkan Kotamu!</Text>
 
-          {/* Input kota */}
-          <Text style={styles.inputLabel}>Masukkan Kota mu</Text>
-          <View style={styles.inputRow}>
+          {/* ── Input kota — X:15 Y:132 W:284 H:24 ──── */}
+          <View style={[styles.inputBox, a(15, 132), sz(284, 24)]}>
             <TextInput
               value={cityInput}
               onChangeText={setCityInput}
-              placeholder="- - - - - - - -"
-              placeholderTextColor="rgba(0,0,0,0.35)"
-              style={styles.cityInput}
-              onSubmitEditing={handleTopTambah}
+              placeholder="Your City..."
+              placeholderTextColor="rgba(0,0,0,0.5)"
+              style={styles.inputText}
+              onSubmitEditing={() => fetchWeather(cityInput)}
               returnKeyType="search"
             />
-            {/* ⬇️ Top Tambah = CEK CUACA */}
-            <Pressable
-              style={({ pressed }) => [styles.tambahTopBtn, pressed && { opacity: 0.75 }]}
-              onPress={handleTopTambah}
-              disabled={weatherLoading}
-            >
-              <Text style={styles.tambahTopBtnText}>Tambah</Text>
-            </Pressable>
           </View>
 
-          {/* Kela... loading (cuaca / tambah favorit) */}
-          {anyLoading && (
-            <View style={styles.kelaRow}>
-              <Text style={styles.kelaText}>{DOTS[dotIndex]}</Text>
-            </View>
-          )}
+          {/* ── Tombol "tambah" (cari) — X:330 Y:132 W:68 H:23 ── */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.btnTambah, a(330, 132), sz(68, 23),
+              pressed && { opacity: 0.75 },
+            ]}
+            onPress={() => fetchWeather(cityInput)}
+            disabled={loading}
+          >
+            <Text style={styles.btnTambahText}>tambah</Text>
+          </Pressable>
 
-          {/* Error cuaca */}
+          {/* ── Area cuaca tengah — X:20 Y:180 ──────── */}
           {weatherError ? (
-            <Text style={styles.weatherError}>{weatherError}</Text>
+            <Text style={[styles.errorText, a(20, 200), { width: 280 * S }]}>
+              {weatherError}
+            </Text>
           ) : null}
 
-          {/* Hasil cuaca */}
           {weather && (
-            <View style={styles.weatherCard}>
+            <View style={[styles.weatherCard, a(20, 165), { width: 260 * S }]}>
               <Text style={styles.weatherEmoji}>{wEmoji(weather.icon)}</Text>
-              <Text style={styles.weatherCity}>{weather.cityName}, {weather.country}</Text>
               <Text style={styles.weatherTemp}>{weather.temp}°C</Text>
+              <Text style={styles.weatherCity}>{weather.cityName}, {weather.country}</Text>
               <Text style={styles.weatherDesc}>{weather.description}</Text>
-              <View style={styles.detailRow}>
-                <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>🌡️ Terasa</Text>
-                  <Text style={styles.detailValue}>{weather.feelsLike}°C</Text>
+              {/* Detail row */}
+              <View style={styles.weatherDetailRow}>
+                <View style={styles.weatherDetailItem}>
+                  <Text style={styles.weatherDetailLabel}>Terasa</Text>
+                  <Text style={styles.weatherDetailVal}>{weather.feelsLike}°C</Text>
                 </View>
-                <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>💧 Lembab</Text>
-                  <Text style={styles.detailValue}>{weather.humidity}%</Text>
+                <View style={styles.weatherDetailItem}>
+                  <Text style={styles.weatherDetailLabel}>Lembab</Text>
+                  <Text style={styles.weatherDetailVal}>{weather.humidity}%</Text>
                 </View>
-                <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>💨 Angin</Text>
-                  <Text style={styles.detailValue}>{weather.windSpeed} m/s</Text>
+                <View style={styles.weatherDetailItem}>
+                  <Text style={styles.weatherDetailLabel}>Angin</Text>
+                  <Text style={styles.weatherDetailVal}>{weather.windSpeed} m/s</Text>
                 </View>
               </View>
             </View>
           )}
-        </ScrollView>
 
-        {/* ── "List Kota Favorit" — tepat di atas green ── */}
-        <Text style={styles.listLabel}>List Kota Favorit</Text>
-
-        {/* ════════════════════════════════════════════
-            GREEN SECTION — list kota favorit
-        ════════════════════════════════════════════ */}
-        <View style={styles.greenSection}>
-
-          {/* Header: Tambah button kanan */}
-          <View style={styles.greenHeader}>
-            {/* ⬇️ Green Tambah = TAMBAH KE FAVORIT */}
-            <Pressable
-              style={({ pressed }) => [styles.tambahGreenBtn, pressed && { opacity: 0.75 }]}
-              onPress={handleGreenTambah}
-            >
-              <Text style={styles.tambahGreenBtnText}>Tambah</Text>
-            </Pressable>
-          </View>
-
-          {/* List scrollable */}
-          <ScrollView
-            style={styles.cityListScroll}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
+          {/* ── "Tambah Favorit" — X:19 Y:529 W:114 H:23 ── */}
+          <Pressable
+            style={({ pressed }) => [
+              styles.btnFav, a(19, 529), sz(114, 23),
+              pressed && { opacity: 0.75 },
+            ]}
+            onPress={handleAddFavorite}
           >
-            {rows.map((row, index) => {
+            <Text style={styles.btnFavText}>Tambah Favorit</Text>
+          </Pressable>
 
-              /* ── Pending row (input kosong baru) ── */
-              if (row.kind === 'pending') {
-                return (
-                  <View key={row.tempId} style={styles.cityRow}>
-                    <Text style={styles.cityNum}>{index + 1}.</Text>
-                    <TextInput
-                      value={pendingName}
-                      onChangeText={setPendingName}
-                      placeholder="Masukkan Kota"
-                      placeholderTextColor="rgba(255,255,255,0.6)"
-                      style={styles.inlineInput}
-                      autoFocus
-                      onSubmitEditing={handleSavePending}
-                      returnKeyType="done"
-                    />
-                    <Pressable style={styles.simpanBtn} onPress={handleSavePending}>
-                      <Text style={styles.simpanBtnText}>Simpan</Text>
-                    </Pressable>
-                    <Pressable
-                      style={styles.hapusBtn}
-                      onPress={() => setRows((p) => p.filter((r) => r.kind !== 'pending'))}
-                    >
-                      <Text style={styles.hapusBtnText}>✕</Text>
-                    </Pressable>
-                  </View>
-                );
-              }
-
-              /* ── Saved row ── */
-              return (
-                <View key={row.id} style={styles.cityRow}>
-                  {editingId === row.id ? (
+          {/* ── Kotak besar daftar favorit — X:11 Y:561 W:370 H:247 ── */}
+          <View style={[styles.favoritesBox, a(11, 561), sz(370, 247)]}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {favorites.map((city, index) => (
+                <View key={city.id} style={styles.favItem}>
+                  {editingId === city.id ? (
+                    /* Mode edit — TextInput ikut naik bersama keyboard */
                     <>
-                      <Text style={styles.cityNum}>{index + 1}.</Text>
+                      <Text style={styles.favNum}>{index + 1}. </Text>
                       <TextInput
                         value={editingName}
                         onChangeText={setEditingName}
-                        placeholder="Masukkan Kota"
-                        placeholderTextColor="rgba(255,255,255,0.6)"
-                        style={styles.inlineInput}
                         autoFocus
+                        style={styles.favEditInput}
                         onSubmitEditing={handleSaveEdit}
                         returnKeyType="done"
                       />
-                      <Pressable style={styles.simpanBtn} onPress={handleSaveEdit}>
-                        <Text style={styles.simpanBtnText}>Simpan</Text>
-                      </Pressable>
-                      <Pressable style={styles.hapusBtn} onPress={() => handleDelete(row.id)}>
-                        <Text style={styles.hapusBtnText}>Hapus</Text>
+                      <Pressable style={styles.favSaveBtn} onPress={handleSaveEdit}>
+                        <Text style={styles.favSaveBtnText}>✓</Text>
                       </Pressable>
                     </>
                   ) : (
+                    /* Mode normal */
                     <>
-                      <Text style={styles.cityNum}>{index + 1}.</Text>
+                      {/* LOGIKA BARU: Sekali tekan = ngecek cuaca, Tahan lama = Edit nama kota */}
                       <Pressable
                         style={{ flex: 1 }}
-                        onPress={() => { setCityInput(row.name); fetchWeather(row.name); }}
+                        onPress={() => fetchWeather(city.name)}
+                        onLongPress={() => { setEditingId(city.id); setEditingName(city.name); }}
                       >
-                        <Text style={styles.cityName}>{row.name}</Text>
+                        <Text style={styles.favName}>{index + 1}.  {city.name}</Text>
                       </Pressable>
-                      <Pressable
-                        style={styles.editBtn}
-                        onPress={() => { setEditingId(row.id); setEditingName(row.name); }}
-                      >
-                        <Text style={styles.editBtnText}>Edit</Text>
+                      {/* Icon silang */}
+                      <Pressable onPress={() => handleDelete(city.id)} style={styles.favDeleteBtn}>
+                        <Text style={styles.favDeleteText}>✕</Text>
                       </Pressable>
                     </>
                   )}
+                  {/* Garis pemisah — hanya tampil jika ada item */}
+                  <View style={styles.favDivider} />
                 </View>
-              );
-            })}
-          </ScrollView>
+              ))}
+            </ScrollView>
+          </View>
 
-          {/* Footer: Kela... (nav) + Halaman utama */}
-          <View style={styles.greenFooter}>
-            {navLoading && (
-              <Text style={styles.navKelaText}>{DOTS[navDot]}</Text>
-            )}
-            <View style={styles.footerRight}>
-              <Text style={styles.udahanText}>Udahan ahh..</Text>
-              <Pressable
-                style={({ pressed }) => [styles.halamanBtn, pressed && { opacity: 0.75 }]}
-                onPress={onHalamanUtama}
-                disabled={navLoading}
-              >
-                <Text style={styles.halamanBtnText}>Halaman utama</Text>
-              </Pressable>
-            </View>
+          {/* ── Kela... loading — X:187 Y:724 ────────── */}
+          {loading && (
+            <Text style={[styles.kelaText, a(187, 724)]}>kela{dots}</Text>
+          )}
+
+          {/* ── "Udahan dulu" + "Home" — X:274 Y:837 ── */}
+          <Text style={[styles.udahanTitle, a(274, 837)]}>Udahan dulu</Text>
+          <Pressable
+            style={[styles.homeBtn, a(296, 864), sz(85, 23)]}
+            onPress={() => router.replace('/')}
+          >
+            <Text style={styles.homeBtnText}>Home</Text>
+          </Pressable>
+
+          {/* ── ORNAMEN GAMBAR ─────────────────────────── */}
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <Image source={require('../../assets/icon/pohon4.png')}
+              style={[{ position: 'absolute' }, a(310, 42), sz(80, 72)]} resizeMode="contain" />
+            <Image source={require('../../assets/icon/pohon5.png')}
+              style={[{ position: 'absolute' }, a(256, 78), sz(64, 55)]} resizeMode="contain" />
+            <Image source={require('../../assets/icon/Kucing1.png')}
+              style={[{ position: 'absolute' }, a(330, 496), sz(93, 76)]} resizeMode="contain" />
+            <Image source={require('../../assets/icon/pohon1.png')}
+              style={[{ position: 'absolute' }, a(274, 670), sz(162, 139)]} resizeMode="contain" />
+            <Image source={require('../../assets/icon/pohon3.png')}
+              style={[{ position: 'absolute' }, a(261, 706), sz(71, 103)]} resizeMode="contain" />
+            <Image source={require('../../assets/icon/pohon2.png')}
+              style={[{ position: 'absolute' }, a(10, 808), sz(68, 109)]} resizeMode="contain" />
           </View>
 
         </View>
-
-      </View>
-    </KeyboardAvoidingView>
+      </ScrollView>
+    </View>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────
-const FONT  = 'HiMelody';
-const BG    = '#87CEEB';
-const GREEN = '#27AE60';
-const CARD  = '#D9D9D9';
+const BG   = '#5F7D95';
+const CARD = '#D9D9D9';
+const FONT = 'PlusJakartaSans_400Regular';
 
 const styles = StyleSheet.create({
-  loadingScreen:  { flex: 1, backgroundColor: BG },
-  outerContainer: { flex: 1, backgroundColor: BG },
+  bg:           { flex: 1, backgroundColor: BG },
+  scrollContent:{ flexGrow: 1 },
+  canvas:       { backgroundColor: 'transparent', position: 'relative', minHeight: 950 * S },
 
-  // ── Toast ─────────────────────────────────────────────
+  // Toast
   toast: {
-    position: 'absolute', top: 55, left: 16, right: 16, zIndex: 999,
-    backgroundColor: 'rgba(39,174,96,0.96)', borderRadius: 14,
-    paddingHorizontal: 18, paddingVertical: 12, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25, shadowRadius: 8, elevation: 10,
+    position: 'absolute', top: 50 * S, left: 20 * S, right: 20 * S,
+    zIndex: 999, backgroundColor: 'rgba(0,0,0,0.82)',
+    borderRadius: 10 * S, padding: 12 * S, alignItems: 'center',
   },
-  toastText: { fontFamily: FONT, fontSize: 14, color: '#fff', textAlign: 'center' },
+  toastText: { fontFamily: FONT, fontSize: 13 * S, color: '#fff' },
 
-  // ── Top Scroll ────────────────────────────────────────
-  topScroll:  { flex: 1 },
-  topContent: { paddingHorizontal: 16, paddingTop: 48, paddingBottom: 6 },
+  // Header
+  greeting:    { position: 'absolute', fontFamily: FONT, fontSize: 19 * S, color: '#000' },
+  kimoriText:  { position: 'absolute', fontFamily: 'PlusJakartaSans_200ExtraLight', fontSize: 20 * S, color: '#000' },
+  indicatorBox:{ position: 'absolute', backgroundColor: CARD, borderRadius: 5 * S, justifyContent: 'flex-end', paddingBottom: 2 * S, borderBottomWidth: 2, borderBottomColor: '#D9D9D9' },
+  indicatorText:{ fontFamily: FONT, fontSize: 14 * S, color: '#000' },
 
-  topRow: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 10,
-  },
-  cekBtn:     { backgroundColor: CARD, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7 },
-  cekBtnText: { fontFamily: FONT, fontSize: 13, color: '#000' },
-  greetingText: { fontFamily: FONT, fontSize: 14, color: '#000' },
+  // Input kota
+  inputLabel:  { position: 'absolute', fontFamily: FONT, fontSize: 19 * S, color: '#000' },
+  inputBox:    { position: 'absolute', backgroundColor: CARD, borderRadius: 4 * S, justifyContent: 'center', paddingHorizontal: 6 * S },
+  inputText:   { fontFamily: FONT, fontSize: 17 * S, color: '#000', padding: 0 },
 
-  appLabelWrap: { marginBottom: 14 },
-  appLabel:     { fontFamily: FONT, fontSize: 15, color: '#000', marginBottom: 6 },
-  dividerLine:  { width: 200, height: 3, backgroundColor: '#000' },
+  // Tombol tambah (cari)
+  btnTambah:     { position: 'absolute', backgroundColor: CARD, borderRadius: 4 * S, justifyContent: 'center', alignItems: 'center' },
+  btnTambahText: { fontFamily: FONT, fontSize: 13 * S, color: '#000' },
 
-  inputLabel: { fontFamily: FONT, fontSize: 14, color: '#000', marginBottom: 8 },
-  inputRow:   { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
-  cityInput: {
-    flex: 1, backgroundColor: CARD, borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 10,
-    fontFamily: FONT, fontSize: 14, color: '#000',
-  },
-  tambahTopBtn:     { backgroundColor: CARD, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10 },
-  tambahTopBtnText: { fontFamily: FONT, fontSize: 13, color: '#000' },
-
-  // Kela... loading bar (cuaca/tambah)
-  kelaRow: { alignItems: 'center', marginVertical: 4 },
-  kelaText: { fontFamily: FONT, fontSize: 13, color: '#1E90FF', width: 40, height: 16, textAlign: 'center', lineHeight: 16 },
-
-  weatherError: { fontFamily: FONT, fontSize: 12, color: '#CC0000', textAlign: 'center', marginTop: 4 },
-
+  // Weather display
+  errorText:   { position: 'absolute', fontFamily: FONT, fontSize: 14 * S, color: '#FFD2D2' },
   weatherCard: {
-    backgroundColor: 'rgba(255,255,255,0.6)', borderRadius: 12,
-    padding: 14, marginTop: 8, alignItems: 'center',
+    position: 'absolute',
+    alignItems: 'center',
   },
-  weatherEmoji:  { fontSize: 42, marginBottom: 4 },
-  weatherCity:   { fontFamily: FONT, fontSize: 15, color: '#000', marginBottom: 2 },
-  weatherTemp:   { fontFamily: FONT, fontSize: 42, color: '#000', marginBottom: 2 },
-  weatherDesc:   { fontFamily: FONT, fontSize: 13, color: '#555', textTransform: 'capitalize', marginBottom: 10 },
-  detailRow:     { flexDirection: 'row', justifyContent: 'space-around', width: '100%' },
-  detailItem:    { alignItems: 'center', flex: 1 },
-  detailLabel:   { fontFamily: FONT, fontSize: 10, color: '#666', marginBottom: 2 },
-  detailValue:   { fontFamily: FONT, fontSize: 13, color: '#000' },
+  weatherEmoji:{ fontSize: 70 * S },
+  weatherTemp: { fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 44 * S, color: '#000', marginTop: -4 * S },
+  weatherCity: { fontFamily: FONT, fontSize: 18 * S, color: '#000' },
+  weatherDesc: { fontFamily: 'PlusJakartaSans_300Light', fontSize: 14 * S, color: '#000', textTransform: 'capitalize', marginBottom: 8 * S },
+  weatherDetailRow: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginTop: 4 * S },
+  weatherDetailItem:{ alignItems: 'center' },
+  weatherDetailLabel:{ fontFamily: FONT, fontSize: 10 * S, color: '#222' },
+  weatherDetailVal:  { fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 13 * S, color: '#000' },
 
-  // "List Kota Favorit" — fixed tepat di atas green
-  listLabel: {
-    fontFamily: FONT, fontSize: 13, color: '#000',
-    textAlign: 'right',
-    paddingHorizontal: 16,
-    paddingBottom: 4,   // jarak minimal ke green section
-    backgroundColor: BG,
+  // Tambah favorit
+  btnFav:     { position: 'absolute', backgroundColor: CARD, borderRadius: 4 * S, justifyContent: 'center', alignItems: 'center' },
+  btnFavText: { fontFamily: FONT, fontSize: 13 * S, color: '#000' },
+
+  // Kotak favorit
+  favoritesBox: {
+    position: 'absolute',
+    backgroundColor: 'rgba(217,217,217,0.3)',
+    borderRadius: 15 * S,
+    padding: 10 * S,
   },
-
-  // ── Green Section ─────────────────────────────────────
-  greenSection: {
-    backgroundColor: GREEN,
-    paddingHorizontal: 14, paddingTop: 10, paddingBottom: 12,
-    minHeight: 200, maxHeight: 320,
-  },
-  greenHeader:          { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 8 },
-  tambahGreenBtn:       { backgroundColor: CARD, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },
-  tambahGreenBtnText:   { fontFamily: FONT, fontSize: 13, color: '#000' },
-
-  cityListScroll: { flex: 1 },
-
-  cityRow: {
+  favItem: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 6, paddingVertical: 6,
-    marginBottom: 4, gap: 6,
+    paddingVertical: 8 * S, position: 'relative',
   },
-  cityNum:  { fontFamily: FONT, fontSize: 14, color: '#fff', width: 24 },
-  cityName: { fontFamily: FONT, fontSize: 14, color: '#fff' },
+  favNum:   { fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12 * S, color: '#000' },
+  favName:  { fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 12 * S, color: '#000' },
+  favDivider:{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, backgroundColor: 'rgba(0,0,0,0.15)' },
+  favDeleteBtn: { paddingHorizontal: 6 * S },
+  favDeleteText:{ fontFamily: FONT, fontSize: 13 * S, color: '#000' },
+  favEditInput: {
+    flex: 1, backgroundColor: '#fff', borderRadius: 4 * S,
+    paddingHorizontal: 6 * S, fontSize: 12 * S,
+    fontFamily: 'PlusJakartaSans_600SemiBold', color: '#000', height: 20 * S,
+  },
+  favSaveBtn:    { backgroundColor: '#4CAF50', width: 22 * S, height: 20 * S, borderRadius: 4 * S, justifyContent: 'center', alignItems: 'center', marginLeft: 6 * S },
+  favSaveBtnText:{ fontSize: 10 * S, color: '#fff', fontWeight: 'bold' },
 
-  inlineInput: {
-    flex: 1, backgroundColor: 'rgba(255,255,255,0.25)',
-    borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6,
-    fontFamily: FONT, fontSize: 13, color: '#fff',
-  },
-  editBtn:       { backgroundColor: CARD, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 5 },
-  editBtnText:   { fontFamily: FONT, fontSize: 12, color: '#000' },
-  simpanBtn:     { backgroundColor: CARD, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
-  simpanBtnText: { fontFamily: FONT, fontSize: 11, color: '#000' },
-  hapusBtn:      { backgroundColor: '#e74c3c', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
-  hapusBtnText:  { fontFamily: FONT, fontSize: 11, color: '#fff' },
+  // Kela...
+  kelaText:     { position: 'absolute', fontFamily: 'Jaro_400Regular', fontSize: 18 * S, color: '#1E90FF' },
 
-  // Footer green
-  greenFooter: {
-    flexDirection: 'row', justifyContent: 'flex-end',
-    alignItems: 'flex-end', paddingTop: 8, gap: 12,
-  },
-  navKelaText:    { fontFamily: FONT, fontSize: 13, color: '#1E90FF', width: 40, height: 16, textAlign: 'center', lineHeight: 16 },
-  footerRight:    { alignItems: 'flex-end' },
-  udahanText:     { fontFamily: FONT, fontSize: 12, color: '#fff', marginBottom: 4 },
-  halamanBtn:     { backgroundColor: CARD, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 8 },
-  halamanBtnText: { fontFamily: FONT, fontSize: 13, color: '#000' },
+  // Footer
+  udahanTitle:  { position: 'absolute', fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 20 * S, color: '#000' },
+  homeBtn:      { position: 'absolute', backgroundColor: CARD, borderRadius: 5 * S, justifyContent: 'center', alignItems: 'center' },
+  homeBtnText:  { fontFamily: 'PlusJakartaSans_300Light', fontSize: 16 * S, color: '#000' },
 });
