@@ -303,12 +303,23 @@ export default function RegisterScreen() {
           </View>
         )}
 
-        {/* ── Ornamen gambar ────────────────────────── */}
-        {/* pohon_3_05.png → X:335 Y:55  W:59  H:109 */}
-        {/* Kucing1.png    → X:290 Y:431 W:123 H:101 */}
-        {/* pohon_1_03.png → X:326 Y:596 W:79  H:74  */}
-        {/* pohon_2_04.png → X:1   Y:896 W:80  H:125 */}
-        {/* Pasang Image di sini setelah aset siap */}
+        {/* ── Ornamen gambar (Ditambahin zIndex: -1 agar di belakang) ── */}
+        <Image
+          source={require('../../assets/icon/pohon3.png')}
+          style={[a(335, 55), sz(59, 109), { resizeMode: 'contain', zIndex: -1 }]}
+        />
+        <Image
+          source={require('../../assets/icon/Kucing1.png')}
+          style={[a(290, 431), sz(123, 101), { resizeMode: 'contain', zIndex: -1 }]}
+        />
+        <Image
+          source={require('../../assets/icon/pohon1.png')}
+          style={[a(326, 596), sz(79, 74), { resizeMode: 'contain', zIndex: -1 }]}
+        />
+        <Image
+          source={require('../../assets/icon/pohon2.png')}
+          style={[a(1, 896), sz(80, 125), { resizeMode: 'contain', zIndex: -1 }]}
+        />
 
         <View style={{ height: 60 * S }} />
       </ScrollView>

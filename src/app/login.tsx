@@ -135,19 +135,19 @@ export default function LoginScreen() {
 
         {/* ════════════ ASET GAMBAR DIMASUKKAN DI SINI ════════════ */}
         <Image
-          source={require('../../assets/images/pohon3.png')}
+          source={require('../../assets/icon/pohon3.png')}
           style={[pos(335, 55, scale), sizeStyle(59, 109, scale), {position: 'absolute', resizeMode: 'contain'}]}
         />
         <Image
-          source={require('../../assets/images/Kucing1.png')}
+          source={require('../../assets/icon/Kucing1.png')}
           style={[pos(290, 431, scale), sizeStyle(123, 101, scale), {position: 'absolute', resizeMode: 'contain'}]}
         />
         <Image
-          source={require('../../assets/images/pohon1.png')}
+          source={require('../../assets/icon/pohon1.png')}
           style={[pos(326, 596, scale), sizeStyle(79, 74, scale), {position: 'absolute', resizeMode: 'contain'}]}
         />
         <Image
-          source={require('../../assets/images/pohon2.png')}
+          source={require('../../assets/icon/pohon2.png')}
           style={[pos(1, 896, scale), sizeStyle(80, 125, scale), {position: 'absolute', resizeMode: 'contain'}]}
         />
         {/* ═══════════════════════════════════════════════════════ */}
