@@ -143,10 +143,8 @@ export default function HomeScreen() {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const title = response.notification.request.content.title ?? '';
       if (title.includes('Malam')) {
-        // Notif malam → langsung ke notepad biar user bisa cerita
         router.push('/notepad');
       }
-      // Notif pagi & sore → stay di home
     });
     return () => sub.remove();
   }, [router]);
@@ -182,51 +180,55 @@ export default function HomeScreen() {
   const [importLoading, setImportLoading]         = useState(false);
   const [importResult, setImportResult]           = useState('');
 
-  // ── Export JSON ───────────────────────────────────────
+  // ── Export JSON (Sudah Diperbaiki & Dilindungi) ───────
   const handleExport = async () => {
     if (!uid) {
       Alert.alert('Error', 'User belum login.');
       return;
     }
     try {
-      // 1. Ambil semua data dari Firestore
-      const [notesSnap, assessSnap, userSnap] = await Promise.all([
-        getDocs(collection(db, 'users', uid, 'notes')),
-        getDocs(collection(db, 'users', uid, 'assessments')),
-        getDoc(doc(db, 'users', uid)),
-      ]);
+      // Pembacaan data dibuat berurutan dengan penanganan fallback agar anti-error
+      const notesSnap = await getDocs(collection(db, 'users', uid, 'notes')).catch(() => null);
+      const assessSnap = await getDocs(collection(db, 'users', uid, 'assessments')).catch(() => null);
+      const userSnap = await getDoc(doc(db, 'users', uid)).catch(() => null);
 
-      const userData = userSnap.exists() ? userSnap.data() : {};
+      const userData = userSnap && userSnap.exists() ? userSnap.data() : {};
+
+      // Amankan pemetaan array dari kemungkinan properti bernilai undefined
+      const notesList = notesSnap && notesSnap.docs
+        ? notesSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        : [];
+
+      const assessmentsList = assessSnap && assessSnap.docs
+        ? assessSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        : [];
 
       const exportData = {
         exportedAt:  new Date().toISOString(),
         appVersion:  '1.0.1',
         user:        { uid, username, ...userData },
-        notes:       notesSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
-        assessments: assessSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+        notes:       notesList,
+        assessments: assessmentsList,
       };
 
-      // 2. Tulis ke file lokal
       const fileName = `kimorimy_backup_${new Date().toISOString().split('T')[0]}.json`;
       const filePath = `${FileSystem.documentDirectory}${fileName}`;
+
       await FileSystem.writeAsStringAsync(
         filePath,
         JSON.stringify(exportData, null, 2),
         { encoding: FileSystem.EncodingType.UTF8 }
       );
 
-      // 3. Cek apakah sharing tersedia
       const sharingAvailable = await Sharing.isAvailableAsync();
 
       if (sharingAvailable) {
-        // Share sheet — user pilih WA / ZArchiver / Drive dll
         await Sharing.shareAsync(filePath, {
           mimeType:    'application/json',
           dialogTitle: 'Kirim / Simpan Backup Kimori .My',
           UTI:         'public.json',
         });
       } else {
-        // Fallback: beritahu lokasi file
         Alert.alert(
           'File Tersimpan ✅',
           `Backup disimpan di storage internal:\n\n${filePath}\n\nBuka via file manager untuk akses file.`
@@ -234,7 +236,6 @@ export default function HomeScreen() {
       }
 
     } catch (err: unknown) {
-      // Tampilkan error spesifik untuk debugging
       const msg = err instanceof Error ? err.message : String(err);
       Alert.alert(
         'Gagal Export',
@@ -370,21 +371,11 @@ export default function HomeScreen() {
       >
         <View style={[styles.canvas, { width: DW, minHeight: DH }]}>
 
-          {/* "Haii, Username" — X:11 Y:19 */}
           <Text style={[styles.greeting, a(11, 19)]}>Haii, {username || 'User'}!</Text>
-
-          {/* "Kimori .My" — X:300 Y:10 */}
           <Text style={[styles.kimoriText, a(300, 10)]}>Kimori .My</Text>
-
-          {/* Subtitle — X:11 Y:42 */}
-          <Text style={[styles.subGreeting, a(11, 42)]}>
-            Gimana kondisi pikiranmu hari ini?
-          </Text>
-
-          {/* Garis — X:11 Y:91 W:251 H:2 */}
+          <Text style={[styles.subGreeting, a(11, 42)]}>Gimana kondisi pikiranmu hari ini?</Text>
           <View style={[styles.headerLine, a(11, 91), sz(251, 2)]} />
 
-          {/* ── Cek Kesehatan Mental — X:21 Y:190 ────── */}
           <Text style={[styles.featureTitle, a(21, 190)]}>Cek Kesehatan Mental</Text>
           <Text style={[styles.featureDesc, a(22, 217), { width: 220 * S }]}>
             Coba cek kondisi hari ini lewat tes singkat yukk...
@@ -397,7 +388,6 @@ export default function HomeScreen() {
             <Text style={styles.featureBtnText}>Mulai Tes !!</Text>
           </Pressable>
 
-          {/* ── Cek Cuaca — X:262 Y:413 ───────────────── */}
           <Text style={[styles.featureTitle, a(262, 413)]}>Cek Cuaca !!</Text>
           <Pressable
             style={({ pressed }) => [styles.featureBtn, a(262, 442), sz(124, 49), pressed && { opacity: 0.75 }]}
@@ -407,7 +397,6 @@ export default function HomeScreen() {
             <Text style={styles.featureBtnText}>Cek...</Text>
           </Pressable>
 
-          {/* ── Notepad — X:272 Y:530 ─────────────────── */}
           <Text style={[styles.featureTitle, a(272, 530)]}>Notepad</Text>
           <Pressable
             style={({ pressed }) => [styles.featureBtn, a(268, 560), sz(124, 51), pressed && { opacity: 0.75 }]}
@@ -417,7 +406,6 @@ export default function HomeScreen() {
             <Text style={styles.featureBtnText}>Ketik...</Text>
           </Pressable>
 
-          {/* ── Atur Sapaan — X:11 Y:650 ─────────────── */}
           <Text style={[styles.aturLabel, a(11, 650)]}>Atur Sapaan</Text>
           <Pressable
             style={[styles.setJamBtn, a(11, 672), sz(100, 36)]}
@@ -426,7 +414,6 @@ export default function HomeScreen() {
             <Text style={styles.setJamText}>Set Jam</Text>
           </Pressable>
 
-          {/* ── Icon Transfer (Export/Import) — X:349 Y:658 ── */}
           <Pressable
             style={[styles.transferIconBtn, a(349, 658), sz(44, 44)]}
             onPress={() => { setImportResult(''); setShowTransferPanel(true); }}
@@ -434,66 +421,44 @@ export default function HomeScreen() {
             <Text style={styles.transferIconText}>⇅</Text>
           </Pressable>
 
-          {/* ── Kela... loading — X:187 Y:724 ────────── */}
           {navLoading && (
             <Text style={[styles.kelaText, a(187, 724)]}>kela{dots}</Text>
           )}
 
-          {/* ── Footer — X:274 Y:837 ──────────────────── */}
           <Text style={[styles.udahanTitle, a(274, 837)]}>Udahan dulu</Text>
           <Pressable style={[styles.logoutBtn, a(296, 864), sz(85, 23)]} onPress={handleLogout}>
             <Text style={styles.logoutBtnText}>Logout</Text>
           </Pressable>
 
-          {/* ── Ornamen gambar ────────────────────────── */}
+          {/* Ornamen gambar */}
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            <Image source={require('../../assets/icon/pohon4.png')}
-              style={[{ position: 'absolute' }, a(310, 42),  sz(80, 72)]}  resizeMode="contain" />
-            <Image source={require('../../assets/icon/pohon5.png')}
-              style={[{ position: 'absolute' }, a(145, 266), sz(64, 55)]}  resizeMode="contain" />
-            <Image source={require('../../assets/icon/Kucing2.png')}
-              style={[{ position: 'absolute' }, a(314, 438), sz(106, 53)]} resizeMode="contain" />
-            <Image source={require('../../assets/icon/Kucing1.png')}
-              style={[{ position: 'absolute' }, a(333, 497), sz(93, 76)]}  resizeMode="contain" />
-            <Image source={require('../../assets/icon/pohon3.png')}
-              style={[{ position: 'absolute' }, a(191, 750), sz(113, 175)]} resizeMode="contain" />
-            <Image source={require('../../assets/icon/pohon1.png')}
-              style={[{ position: 'absolute' }, a(70, 781),  sz(162, 139)]} resizeMode="contain" />
-            <Image source={require('../../assets/icon/pohon2.png')}
-              style={[{ position: 'absolute' }, a(10, 808),  sz(68, 68)]}  resizeMode="contain" />
+            <Image source={require('../../assets/icon/pohon4.png')} style={[{ position: 'absolute' }, a(310, 42),  sz(80, 72)]}  resizeMode="contain" />
+            <Image source={require('../../assets/icon/pohon5.png')} style={[{ position: 'absolute' }, a(145, 266), sz(64, 55)]}  resizeMode="contain" />
+            <Image source={require('../../assets/icon/Kucing2.png')} style={[{ position: 'absolute' }, a(314, 438), sz(106, 53)]} resizeMode="contain" />
+            <Image source={require('../../assets/icon/Kucing1.png')} style={[{ position: 'absolute' }, a(333, 497), sz(93, 76)]}  resizeMode="contain" />
+            <Image source={require('../../assets/icon/pohon3.png')} style={[{ position: 'absolute' }, a(191, 750), sz(113, 175)]} resizeMode="contain" />
+            <Image source={require('../../assets/icon/pohon1.png')} style={[{ position: 'absolute' }, a(70, 781),  sz(162, 139)]} resizeMode="contain" />
+            <Image source={require('../../assets/icon/pohon2.png')} style={[{ position: 'absolute' }, a(10, 808),  sz(68, 68)]}  resizeMode="contain" />
           </View>
 
-          {/* ════════ PANEL TRANSFER DATA ════════ */}
+          {/* PANEL TRANSFER DATA */}
           {showTransferPanel && (
             <View style={styles.overlay}>
               <View style={styles.panel}>
                 <Text style={styles.panelTitle}>⇅ Transfer Data</Text>
-                <Text style={styles.panelSub}>
-                  Backup dan pulihkan semua catatan{'\n'}dan riwayat tes kamu
-                </Text>
+                <Text style={styles.panelSub}>Backup dan pulihkan semua catatan{'\n'}dan riwayat tes kamu</Text>
 
-                <Pressable style={styles.btnExport}
-                  onPress={() => { setShowTransferPanel(false); handleExport(); }}>
+                <Pressable style={styles.btnExport} onPress={() => { setShowTransferPanel(false); handleExport(); }}>
                   <Text style={styles.btnExportText}>↗  Export — Kirim ke WA / ZArchiver / Drive</Text>
                 </Pressable>
-                <Text style={styles.hint}>
-                  File JSON dibuka di share sheet Android.{'\n'}Pilih WA, ZArchiver, Drive, dll.
-                </Text>
+                <Text style={styles.hint}>File JSON dibuka di share sheet Android.{'\n'}Pilih WA, ZArchiver, Drive, dll.</Text>
 
                 <View style={styles.divider} />
 
-                <Pressable
-                  style={[styles.btnImport, importLoading && { opacity: 0.6 }]}
-                  onPress={handleImport}
-                  disabled={importLoading}
-                >
-                  <Text style={styles.btnImportText}>
-                    {importLoading ? 'Mengimpor...' : '↙  Import — Pilih file JSON backup'}
-                  </Text>
+                <Pressable style={[styles.btnImport, importLoading && { opacity: 0.6 }]} onPress={handleImport} disabled={importLoading}>
+                  <Text style={styles.btnImportText}>{importLoading ? 'Mengimpor...' : '↙  Import — Pilih file JSON backup'}</Text>
                 </Pressable>
-                <Text style={styles.hint}>
-                  Pilih file .json backup dari storage HP.{'\n'}Data ditambahkan ke akun ini.
-                </Text>
+                <Text style={styles.hint}>Pilih file .json backup dari storage HP.{'\n'}Data ditambahkan ke akun ini.</Text>
 
                 {importResult ? (
                   <View style={styles.importResultBox}>
@@ -501,48 +466,32 @@ export default function HomeScreen() {
                   </View>
                 ) : null}
 
-                <Pressable style={styles.btnClose}
-                  onPress={() => { setShowTransferPanel(false); setImportResult(''); }}>
+                <Pressable style={styles.btnClose} onPress={() => { setShowTransferPanel(false); setImportResult(''); }}>
                   <Text style={styles.btnCloseText}>Tutup</Text>
                 </Pressable>
               </View>
             </View>
           )}
 
-          {/* ════════ PANEL NOTIFIKASI ════════ */}
+          {/* PANEL NOTIFIKASI */}
           {showNotifPanel && (
             <View style={styles.overlay}>
               <View style={styles.panel}>
                 <Text style={styles.panelTitle}>🔔 Atur Jam Sapaan</Text>
-                <Text style={styles.panelSub}>
-                  Format HH:MM (contoh: 07:00, 15:30, 20:00)
-                </Text>
+                <Text style={styles.panelSub}>Format HH:MM (contoh: 07:00, 15:30, 20:00)</Text>
 
                 <Text style={styles.notifLabel}>🌤️ Pagi</Text>
-                <TextInput value={pagiTime} onChangeText={setPagiTime}
-                  placeholder="07:00" placeholderTextColor="rgba(0,0,0,0.4)"
-                  keyboardType="numbers-and-punctuation" maxLength={5}
-                  style={styles.notifInput} />
+                <TextInput value={pagiTime} onChangeText={setPagiTime} placeholder="07:00" placeholderTextColor="rgba(0,0,0,0.4)" keyboardType="numbers-and-punctuation" maxLength={5} style={styles.notifInput} />
 
                 <Text style={styles.notifLabel}>🌅 Sore</Text>
-                <TextInput value={soreTime} onChangeText={setSoreTime}
-                  placeholder="15:00" placeholderTextColor="rgba(0,0,0,0.4)"
-                  keyboardType="numbers-and-punctuation" maxLength={5}
-                  style={styles.notifInput} />
+                <TextInput value={soreTime} onChangeText={setSoreTime} placeholder="15:00" placeholderTextColor="rgba(0,0,0,0.4)" keyboardType="numbers-and-punctuation" maxLength={5} style={styles.notifInput} />
 
                 <Text style={styles.notifLabel}>🌙 Malam</Text>
-                <TextInput value={malamTime} onChangeText={setMalamTime}
-                  placeholder="20:00" placeholderTextColor="rgba(0,0,0,0.4)"
-                  keyboardType="numbers-and-punctuation" maxLength={5}
-                  style={styles.notifInput} />
+                <TextInput value={malamTime} onChangeText={setMalamTime} placeholder="20:00" placeholderTextColor="rgba(0,0,0,0.4)" keyboardType="numbers-and-punctuation" maxLength={5} style={styles.notifInput} />
 
                 <View style={styles.btnRow}>
-                  <Pressable style={styles.btnCancel} onPress={() => setShowNotifPanel(false)}>
-                    <Text style={styles.btnCancelText}>Batal</Text>
-                  </Pressable>
-                  <Pressable style={styles.btnSave} onPress={handleSaveNotif}>
-                    <Text style={styles.btnSaveText}>Simpan</Text>
-                  </Pressable>
+                  <Pressable style={styles.btnCancel} onPress={() => setShowNotifPanel(false)}><Text style={styles.btnCancelText}>Batal</Text></Pressable>
+                  <Pressable style={styles.btnSave} onPress={handleSaveNotif}><Text style={styles.btnSaveText}>Simpan</Text></Pressable>
                 </View>
               </View>
             </View>
@@ -563,41 +512,27 @@ const styles = StyleSheet.create({
   bg:            { flex: 1, backgroundColor: BG },
   scrollContent: { flexGrow: 1 },
   canvas:        { backgroundColor: BG, position: 'relative' },
-
   greeting:     { position: 'absolute', fontFamily: FONT, fontSize: 19 * S, color: '#000' },
   kimoriText:   { position: 'absolute', fontFamily: 'PlusJakartaSans_200ExtraLight', fontSize: 20 * S, color: '#000' },
   subGreeting:  { position: 'absolute', fontFamily: FONT, fontSize: 18 * S, color: '#000' },
   headerLine:   { position: 'absolute', backgroundColor: '#3D2E4C' },
-
   featureTitle: { position: 'absolute', fontFamily: FONT, fontSize: 19 * S, color: '#000' },
   featureDesc:  { position: 'absolute', fontFamily: FONT, fontSize: 16 * S, color: '#000', lineHeight: 22 * S },
   featureBtn:   { position: 'absolute', backgroundColor: CARD, borderRadius: 9 * S, justifyContent: 'center', alignItems: 'center' },
   featureBtnText:{ fontFamily: FONT, fontSize: 19 * S, color: '#000' },
-
   aturLabel:  { position: 'absolute', fontFamily: FONT, fontSize: 16 * S, color: '#000' },
   setJamBtn:  { position: 'absolute', backgroundColor: CARD, borderRadius: 8 * S, justifyContent: 'center', alignItems: 'center' },
   setJamText: { fontFamily: FONT, fontSize: 15 * S, color: '#000' },
-
   transferIconBtn:  { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 8 * S, justifyContent: 'center', alignItems: 'center' },
   transferIconText: { fontSize: 22 * S, color: '#000' },
-
   kelaText:     { position: 'absolute', fontFamily: 'Jaro_400Regular', fontSize: 18 * S, color: '#1E90FF' },
-
   udahanTitle:  { position: 'absolute', fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 20 * S, color: '#000' },
   logoutBtn:    { position: 'absolute', backgroundColor: CARD, borderRadius: 5 * S, justifyContent: 'center', alignItems: 'center' },
   logoutBtnText:{ fontFamily: 'PlusJakartaSans_300Light', fontSize: 16 * S, color: '#000' },
-
-  // Overlay & Panel
-  overlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'center', alignItems: 'center', zIndex: 999,
-  },
+  overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
   panel:    { width: 320 * S, backgroundColor: '#fff', borderRadius: 16 * S, padding: 24 * S },
   panelTitle:{ fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 18 * S, color: '#000', marginBottom: 6 * S },
   panelSub:  { fontFamily: FONT, fontSize: 12 * S, color: '#555', marginBottom: 16 * S, lineHeight: 18 * S },
-
-  // Transfer
   btnExport:     { backgroundColor: '#7D6B91', borderRadius: 10 * S, padding: 12 * S, marginBottom: 6 * S },
   btnExportText: { fontFamily: FONT, fontSize: 13 * S, color: '#fff' },
   btnImport:     { backgroundColor: '#5F7D95', borderRadius: 10 * S, padding: 12 * S, marginBottom: 6 * S },
@@ -608,8 +543,6 @@ const styles = StyleSheet.create({
   importResultText: { fontFamily: FONT, fontSize: 13 * S, color: '#2d6a2d', lineHeight: 20 * S },
   btnClose:      { alignSelf: 'flex-end', paddingHorizontal: 20 * S, paddingVertical: 10 * S, borderRadius: 8 * S, backgroundColor: '#ddd', marginTop: 8 * S },
   btnCloseText:  { fontFamily: FONT, fontSize: 14 * S, color: '#333' },
-
-  // Notif
   notifLabel:  { fontFamily: 'PlusJakartaSans_600SemiBold', fontSize: 14 * S, color: '#000', marginBottom: 4 * S, marginTop: 8 * S },
   notifInput:  { backgroundColor: '#F0EDE8', borderRadius: 8 * S, paddingHorizontal: 12 * S, paddingVertical: 10 * S, fontFamily: FONT, fontSize: 16 * S, color: '#000' },
   btnRow:      { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 * S, marginTop: 20 * S },
